@@ -13,6 +13,7 @@ package main
 
 import (
 	"container/list"
+	"log"
 	"sync"
 	"time"
 )
@@ -40,6 +41,9 @@ type ICache interface {
 }
 
 func NewCache(cap int) *cache {
+	if cap <= 0 {
+		log.Panicln("invalid capacity")
+	}
 	cache := &cache{
 		capacity: cap,
 		items:    make(map[interface{}]*list.Element),
