@@ -1,4 +1,4 @@
-package main
+package cache
 
 import "testing"
 
@@ -21,6 +21,7 @@ func TestCapacity(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
+	defer cache.Done()
 
 	cap := cache.Cap()
 	if cap != 5 {
@@ -33,6 +34,8 @@ func TestClear(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
+	defer cache.Done()
+
 	cache.Add(1, "hi")
 	cache.Add(2, "there")
 
@@ -54,6 +57,8 @@ func TestRemove(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
+	defer cache.Done()
+
 	cache.Add(1, "hi")
 
 	cache.Remove(1)
@@ -68,6 +73,8 @@ func TestCache(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
+	defer cache.Done()
+
 	cache.Add(1, "hi")
 	cache.Add(2, "there")
 
@@ -98,6 +105,8 @@ func TestLRUCache1(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
+	defer cache.Done()
+
 	cache.Add("A", 1) //самый старый элемент -> должен быть вытеснен
 	cache.Add("B", 2)
 	cache.Add("C", 3)
@@ -119,6 +128,8 @@ func TestLRUCache2(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
+	defer cache.Done()
+
 	cache.Add("A", 1)
 	cache.Add("B", 2)
 	cache.Add("C", 3)

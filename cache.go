@@ -1,4 +1,4 @@
-package main
+package cache
 
 //в структуре элемента хранится:
 //key - ключ чтобы можно было при удаление элемета взять последний с конца списка, удалить его из листа и сразу удалить его из мапы
@@ -29,6 +29,7 @@ type cache struct {
 	items    map[interface{}]*list.Element
 	list     *list.List
 	mu       sync.Mutex
+	done     chan struct{}
 }
 
 type ICache interface {
@@ -49,9 +50,59 @@ func NewCache(cap int) (*cache, error) {
 		capacity: cap,
 		items:    make(map[interface{}]*list.Element),
 		list:     list.New(),
+		done:     make(chan struct{}),
 	}
-	//go cache.deleteExpired()
+	go cache.deleteByTTL()
 	return cache, nil
+}
+
+func (c *cache) deleteByTTL() {
+	ticker := time.NewTicker(1 * time.Minute)
+	for {
+		select {
+		case <-ticker.C:
+			c.mu.Lock()
+			elem := c.list.Front()
+			for elem != nil {
+				next := elem.Next()
+				if elem.Value.(*item).ttl.Before(time.Now()) {
+					c.mu.Unlock()
+					c.Remove(elem.Value.(*item).key)
+					c.mu.Lock()
+				}
+				elem = next
+			}
+			c.mu.Unlock()
+		case <-c.done:
+			ticker.Stop()
+			return
+		}
+	}
+}
+
+func (c *cache) Done() {
+	c.done <- struct{}{}
+}
+
+func (c *cache) AddWithTTL(key, value interface{}, ttl time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	elem, ok := c.items[key]
+	if ok {
+		if elem.Value.(*item).value != value {
+			elem.Value.(*item).value = value
+		}
+		elem.Value.(*item).ttl = time.Now().Add(ttl)
+		c.list.MoveToFront(elem)
+	} else {
+		if c.list.Len() >= c.capacity {
+			c.deleteCacheItem()
+		}
+		newItem := &item{key: key, value: value, ttl: time.Now().Add(ttl)}
+		item := c.list.PushFront(newItem)
+		c.items[key] = item
+	}
 }
 
 func (c *cache) Cap() int {
@@ -71,13 +122,11 @@ func (c *cache) Add(key, value interface{}) {
 
 	elem, ok := c.items[key]
 	if ok {
-		//если эдемент с таким ключом уже есть в мапе
 		if elem.Value.(*item).value != value {
 			elem.Value.(*item).value = value
 		}
 		elem.Value.(*item).ttl = time.Time{}
 		c.list.MoveToFront(elem)
-
 	} else {
 		if c.list.Len() >= c.capacity {
 			c.deleteCacheItem()
@@ -86,7 +135,6 @@ func (c *cache) Add(key, value interface{}) {
 		item := c.list.PushFront(newItem)
 		c.items[key] = item
 	}
-
 }
 
 func (c *cache) deleteCacheItem() {
@@ -105,7 +153,7 @@ func (c *cache) Get(key interface{}) (value interface{}, ok bool) {
 	if !ok {
 		return nil, false
 	}
-	if elem.Value.(*item).ttl.After(time.Now()) {
+	if elem.Value.(*item).ttl.Before(time.Now()) {
 		c.Remove(elem.Value.(*item).key)
 		return nil, false
 	}
@@ -121,45 +169,5 @@ func (c *cache) Remove(key interface{}) {
 	if ok {
 		c.list.Remove(elem)
 		delete(c.items, elem.Value.(*item).key)
-	}
-}
-
-func main() {
-	cache, _ := NewCache(3)
-	//defer cache.Stop()
-
-	cache.Add("a", 1)
-	cache.Add("b", 2)
-	cache.Add("c", 3)
-
-	//cache.AddWithTTL("d", 4, 2*time.Second)
-
-	value, ok := cache.Get("a")
-	if ok {
-		println(value.(int)) // 1
-	} else {
-		println("Key not found")
-	}
-	value, ok = cache.Get("b")
-	if ok {
-		println(value.(int)) // 1
-	} else {
-		println("Key not found")
-	}
-
-	cache.Remove("a")
-	value, ok = cache.Get("a")
-	if ok {
-		println(value.(int))
-	} else {
-		println("Key not found")
-	}
-
-	time.Sleep(3 * time.Second)
-	value, ok = cache.Get("d")
-	if ok {
-		println(value.(int))
-	} else {
-		println("Key not found")
 	}
 }
