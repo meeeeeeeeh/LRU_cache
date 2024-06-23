@@ -3,7 +3,7 @@ package main
 //в структуре элемента хранится:
 //key - ключ чтобы можно было при удаление элемета взять последний с конца списка, удалить его из листа и сразу удалить его из мапы
 // если бы его не было в структуре, то пришлось бы перебирать всю мапу в поиске нужного значения
-//expiration - время жизни элемента (используется только для добавленных с дедлайном, во всех остальных случаях - zeroValue)
+//ttl - время жизни элемента (используется только для добавленных с дедлайном, во всех остальных случаях - zeroValue)
 
 //в конструкторе структуры запускается горутина, которая каждую минуту просматривает все элементы
 //и если в них есть с истеченным дедлайном, то они удаляются
@@ -13,15 +13,15 @@ package main
 
 import (
 	"container/list"
-	"log"
+	"errors"
 	"sync"
 	"time"
 )
 
 type item struct {
-	key        interface{}
-	value      interface{}
-	expiration time.Time
+	key   interface{}
+	value interface{}
+	ttl   time.Time
 }
 
 type cache struct {
@@ -40,9 +40,10 @@ type ICache interface {
 	Remove(key interface{})
 }
 
-func NewCache(cap int) *cache {
+func NewCache(cap int) (*cache, error) {
 	if cap <= 0 {
-		log.Panicln("invalid capacity")
+		err := errors.New("invalid capacity")
+		return nil, err
 	}
 	cache := &cache{
 		capacity: cap,
@@ -50,7 +51,7 @@ func NewCache(cap int) *cache {
 		list:     list.New(),
 	}
 	//go cache.deleteExpired()
-	return cache
+	return cache, nil
 }
 
 func (c *cache) Cap() int {
@@ -74,7 +75,7 @@ func (c *cache) Add(key, value interface{}) {
 		if elem.Value.(*item).value != value {
 			elem.Value.(*item).value = value
 		}
-		elem.Value.(*item).expiration = time.Time{}
+		elem.Value.(*item).ttl = time.Time{}
 		c.list.MoveToFront(elem)
 
 	} else {
@@ -104,6 +105,10 @@ func (c *cache) Get(key interface{}) (value interface{}, ok bool) {
 	if !ok {
 		return nil, false
 	}
+	if elem.Value.(*item).ttl.After(time.Now()) {
+		c.Remove(elem.Value.(*item).key)
+		return nil, false
+	}
 	c.list.MoveToFront(elem)
 	return elem.Value.(*item).value, true
 }
@@ -120,7 +125,7 @@ func (c *cache) Remove(key interface{}) {
 }
 
 func main() {
-	cache := NewCache(3)
+	cache, _ := NewCache(3)
 	//defer cache.Stop()
 
 	cache.Add("a", 1)
