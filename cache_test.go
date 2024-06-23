@@ -34,7 +34,6 @@ func TestClear(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer cache.Done()
 
 	cache.Add(1, "hi")
 	cache.Add(2, "there")
@@ -50,6 +49,7 @@ func TestClear(t *testing.T) {
 		t.Errorf("expected the value to be deleted, but got %s, %t", res, ok)
 	}
 
+	cache.Done()
 }
 
 func TestRemove(t *testing.T) {
@@ -57,7 +57,6 @@ func TestRemove(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer cache.Done()
 
 	cache.Add(1, "hi")
 
@@ -66,6 +65,7 @@ func TestRemove(t *testing.T) {
 	if ok {
 		t.Errorf("expected the value to be deleted, but got %s, %t", res, ok)
 	}
+	cache.Done()
 }
 
 func TestCache(t *testing.T) {
@@ -73,7 +73,6 @@ func TestCache(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer cache.Done()
 
 	cache.Add(1, "hi")
 	cache.Add(2, "there")
@@ -98,6 +97,8 @@ func TestCache(t *testing.T) {
 	if res != "here" || !ok {
 		t.Errorf("expected 'here', true but got %s, %t", res, ok)
 	}
+
+	cache.Done()
 }
 
 func TestLRUCache1(t *testing.T) {

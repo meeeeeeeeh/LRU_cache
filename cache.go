@@ -61,18 +61,18 @@ func (c *cache) deleteByTTL() {
 	for {
 		select {
 		case <-ticker.C:
-			c.mu.Lock()
+			//c.mu.Lock()
 			elem := c.list.Front()
 			for elem != nil {
 				next := elem.Next()
 				if elem.Value.(*item).ttl.Before(time.Now()) {
-					c.mu.Unlock()
+					//c.mu.Unlock()
 					c.Remove(elem.Value.(*item).key)
-					c.mu.Lock()
+					//c.mu.Lock()
 				}
 				elem = next
 			}
-			c.mu.Unlock()
+			//c.mu.Unlock()
 		case <-c.done:
 			ticker.Stop()
 			return
