@@ -14,6 +14,7 @@ package cache
 import (
 	"container/list"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 )
@@ -57,26 +58,34 @@ func NewCache(cap int) (*cache, error) {
 }
 
 func (c *cache) deleteByTTL() {
-	ticker := time.NewTicker(1 * time.Minute)
+	ticker := time.NewTicker(1 * time.Second)
 	for {
 		select {
 		case <-ticker.C:
-			//c.mu.Lock()
+			c.mu.Lock()
 			elem := c.list.Front()
 			for elem != nil {
 				next := elem.Next()
 				if elem.Value.(*item).ttl.Before(time.Now()) {
-					//c.mu.Unlock()
-					c.Remove(elem.Value.(*item).key)
-					//c.mu.Lock()
+					c.deleteItem(elem.Value.(*item).key)
 				}
 				elem = next
 			}
-			//c.mu.Unlock()
+			c.mu.Unlock()
 		case <-c.done:
 			ticker.Stop()
 			return
 		}
+	}
+}
+
+// непотокобезопасное удаление элемента
+// должен использоваться мьютекс перед вызовом функции
+func (c *cache) deleteItem(key interface{}) {
+	elem, ok := c.items[key]
+	if ok {
+		c.list.Remove(elem)
+		delete(c.items, elem.Value.(*item).key)
 	}
 }
 
@@ -97,7 +106,7 @@ func (c *cache) AddWithTTL(key, value interface{}, ttl time.Duration) {
 		c.list.MoveToFront(elem)
 	} else {
 		if c.list.Len() >= c.capacity {
-			c.deleteCacheItem()
+			c.deleteLRU()
 		}
 		newItem := &item{key: key, value: value, ttl: time.Now().Add(ttl)}
 		item := c.list.PushFront(newItem)
@@ -122,6 +131,7 @@ func (c *cache) Add(key, value interface{}) {
 
 	elem, ok := c.items[key]
 	if ok {
+		//если элемент с таким ключом уже есть
 		if elem.Value.(*item).value != value {
 			elem.Value.(*item).value = value
 		}
@@ -129,7 +139,7 @@ func (c *cache) Add(key, value interface{}) {
 		c.list.MoveToFront(elem)
 	} else {
 		if c.list.Len() >= c.capacity {
-			c.deleteCacheItem()
+			c.deleteLRU()
 		}
 		newItem := &item{key: key, value: value}
 		item := c.list.PushFront(newItem)
@@ -137,7 +147,7 @@ func (c *cache) Add(key, value interface{}) {
 	}
 }
 
-func (c *cache) deleteCacheItem() {
+func (c *cache) deleteLRU() {
 	elem := c.list.Back()
 	if elem != nil {
 		c.list.Remove(elem)
@@ -153,8 +163,8 @@ func (c *cache) Get(key interface{}) (value interface{}, ok bool) {
 	if !ok {
 		return nil, false
 	}
-	if elem.Value.(*item).ttl.Before(time.Now()) {
-		c.Remove(elem.Value.(*item).key)
+	if !elem.Value.(*item).ttl.IsZero() && elem.Value.(*item).ttl.Before(time.Now()) {
+		c.deleteItem(elem.Value.(*item).key)
 		return nil, false
 	}
 	c.list.MoveToFront(elem)
@@ -165,9 +175,45 @@ func (c *cache) Remove(key interface{}) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	elem, ok := c.items[key]
-	if ok {
-		c.list.Remove(elem)
-		delete(c.items, elem.Value.(*item).key)
+	c.deleteItem(key)
+}
+
+func (c *cache) getAllItems() ([]interface{}, []interface{}) {
+	keys := make([]interface{}, 0)
+	values := make([]interface{}, 0)
+
+	elem := c.list.Front()
+	for elem != nil {
+		next := elem.Next()
+		keys = append(keys, elem.Value.(*item).key)
+		values = append(values, elem.Value.(*item).value)
+		elem = next
 	}
+
+	return keys, values
+}
+
+func main() {
+	c, _ := NewCache(3)
+	defer c.Done()
+
+	c.Add(3, "A")
+
+	c.AddWithTTL(5, "B", 1*time.Second)
+	c.AddWithTTL(7, "C", 1*time.Second)
+
+	res, ok := c.Get(5)
+	fmt.Println(res, ok)
+
+	k, v := c.getAllItems()
+
+	fmt.Println(k, v)
+
+	time.Sleep(3 * time.Second)
+
+	fmt.Println(c.getAllItems())
+
+	res, ok = c.Get(5)
+	fmt.Println(res, ok)
+
 }
