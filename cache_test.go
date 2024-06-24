@@ -1,10 +1,27 @@
 package cache
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
-// go test -cover ./... - просмотр покрытия
-// go test -coverprofile=coverage.out ./... - сохранение покрытия в файл
-// go tool cover -html=coverage.out - вывод подробного отчета в html
+// метод чтобы получить все значения, но при этом не поднимать их в приоритете
+// и чтобы они не удалялись в get
+func getAllItems(c *cache) ([]interface{}, []interface{}) {
+	keys := make([]interface{}, 0)
+	values := make([]interface{}, 0)
+
+	elem := c.list.Front()
+
+	for elem != nil {
+		next := elem.Next()
+		keys = append(keys, elem.Value.(*item).key)
+		values = append(values, elem.Value.(*item).value)
+		elem = next
+	}
+
+	return keys, values
+}
 
 func TestCapacity(t *testing.T) {
 	_, err := NewCache(0)
@@ -21,7 +38,7 @@ func TestCapacity(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer cache.Done()
+	defer cache.StopTTLRemoval()
 
 	cap := cache.Cap()
 	if cap != 5 {
@@ -34,6 +51,7 @@ func TestClear(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
+	defer cache.StopTTLRemoval()
 
 	cache.Add(1, "hi")
 	cache.Add(2, "there")
@@ -48,8 +66,6 @@ func TestClear(t *testing.T) {
 	if ok {
 		t.Errorf("expected the value to be deleted, but got %s, %t", res, ok)
 	}
-
-	cache.Done()
 }
 
 func TestRemove(t *testing.T) {
@@ -57,6 +73,7 @@ func TestRemove(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
+	defer cache.StopTTLRemoval()
 
 	cache.Add(1, "hi")
 
@@ -65,7 +82,6 @@ func TestRemove(t *testing.T) {
 	if ok {
 		t.Errorf("expected the value to be deleted, but got %s, %t", res, ok)
 	}
-	cache.Done()
 }
 
 func TestCache(t *testing.T) {
@@ -73,6 +89,7 @@ func TestCache(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
+	defer cache.StopTTLRemoval()
 
 	cache.Add(1, "hi")
 	cache.Add(2, "there")
@@ -97,16 +114,14 @@ func TestCache(t *testing.T) {
 	if res != "here" || !ok {
 		t.Errorf("expected 'here', true but got %s, %t", res, ok)
 	}
-
-	cache.Done()
 }
 
-func TestLRUCache1(t *testing.T) {
+func TestLRUCacheLRU(t *testing.T) {
 	cache, err := NewCache(3)
 	if err != nil {
 		t.Error(err)
 	}
-	defer cache.Done()
+	defer cache.StopTTLRemoval()
 
 	cache.Add("A", 1) //самый старый элемент -> должен быть вытеснен
 	cache.Add("B", 2)
@@ -124,12 +139,12 @@ func TestLRUCache1(t *testing.T) {
 	}
 }
 
-func TestLRUCache2(t *testing.T) {
+func TestLRUCacheGetLRU(t *testing.T) {
 	cache, err := NewCache(3)
 	if err != nil {
 		t.Error(err)
 	}
-	defer cache.Done()
+	defer cache.StopTTLRemoval()
 
 	cache.Add("A", 1)
 	cache.Add("B", 2)
@@ -153,4 +168,55 @@ func TestLRUCache2(t *testing.T) {
 	if res != 4 || !ok {
 		t.Errorf("expected 4, true but got %d, %t", res, ok)
 	}
+}
+
+func TestTTLRemoval(t *testing.T) {
+	cache, err := NewCache(4)
+	if err != nil {
+		t.Error(err)
+	}
+	defer cache.StopTTLRemoval()
+
+	cache.AddWithTTL(1, "A", 1*time.Millisecond)
+	cache.AddWithTTL(2, "B", 1*time.Millisecond)
+	cache.AddWithTTL(3, "C", 1*time.Millisecond)
+	cache.AddWithTTL(4, "D", 1*time.Millisecond)
+
+	keys, values := getAllItems(cache)
+	if len(keys) != 4 || len(values) != 4 {
+		t.Errorf("expected keys and values to have 4 elem, but got keys: %v values: %v", keys, values)
+	}
+
+	time.Sleep(2 * time.Second)
+
+	keys, values = getAllItems(cache)
+	if len(keys) != 0 || len(values) != 0 {
+		t.Errorf("expected keys and values to have 0 elem, but got keys: %v values: %v", keys, values)
+
+	}
+
+}
+
+func TestGetAfterTTL(t *testing.T) {
+	cache, err := NewCache(3)
+	if err != nil {
+		t.Error(err)
+	}
+	defer cache.StopTTLRemoval()
+
+	cache.Add(1, "some line")
+	cache.AddWithTTL(2, "another line", 1*time.Millisecond)
+
+	res, ok := cache.Get(2)
+	if res != "another line" || !ok {
+		t.Errorf("expected 'hi', true but got %s, %t", res, ok)
+	}
+
+	time.Sleep(2 * time.Millisecond)
+
+	res, ok = cache.Get(2)
+	if ok {
+		t.Errorf("expected element to be removed by now, but got %s, %t", res, ok)
+	}
+
 }
